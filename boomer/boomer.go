@@ -25,9 +25,13 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/rakyll/pb"
+
+	"bytes"
+	"math/rand"
+	"text/template"
+	"time"
 )
 
 type result struct {
@@ -38,10 +42,23 @@ type result struct {
 }
 
 type Boomer struct {
-	// Request is the request to be made.
-	Request *http.Request
+	// Request URL to check load with
+	RequestURL string
 
+	// Basic authentication username parameter is needed
+	AuthUsername string
+
+	// Basic authentication password parameter is needed
+	AuthPassword string
+
+	// HTTP request body content
 	RequestBody string
+
+	// HTTP Method (GET, POST, PUT, DELETE)
+	Method string
+
+	// HTTP request header
+	Header http.Header
 
 	// N is the total number of requests to make.
 	N int
@@ -78,6 +95,17 @@ type Boomer struct {
 
 	bar     *pb.ProgressBar
 	results chan *result
+}
+
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randSeq(n int) string {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }
 
 func (b *Boomer) startProgress() {
@@ -182,23 +210,34 @@ func (b *Boomer) runWorkers() {
 		if b.Qps > 0 {
 			<-throttle
 		}
-		jobsch <- cloneRequest(b.Request, b.RequestBody)
+		jobsch <- createRequest(b.RequestURL, b.Method, b.AuthUsername, b.AuthPassword, b.Header, b.RequestBody)
 	}
 	close(jobsch)
 	wg.Wait()
 }
 
-// cloneRequest returns a clone of the provided *http.Request.
-// The clone is a shallow copy of the struct and its Header map.
-func cloneRequest(r *http.Request, body string) *http.Request {
-	// shallow copy of the struct
-	r2 := new(http.Request)
-	*r2 = *r
+func createRequest(url string, method string, user string, passwd string, header http.Header, body string) *http.Request {
+	// and replace templates with random values
+	fUrl := evalTmpl(url)
+	req, _ := http.NewRequest(method, fUrl, nil)
+
 	// deep copy of the Header
-	r2.Header = make(http.Header, len(r.Header))
-	for k, s := range r.Header {
-		r2.Header[k] = append([]string(nil), s...)
+	req.Header = make(http.Header, len(header))
+	for k, s := range header {
+		req.Header[k] = append([]string(nil), s...)
 	}
-	r2.Body = ioutil.NopCloser(strings.NewReader(body))
-	return r2
+
+	if user != "" || passwd != "" {
+		req.SetBasicAuth(user, passwd)
+	}
+
+	req.Body = ioutil.NopCloser(strings.NewReader(evalTmpl(body)))
+	return req
+}
+
+func evalTmpl(s string) string {
+	var result bytes.Buffer
+	tmpl, _ := template.New("base").Funcs(template.FuncMap{"rand": randSeq}).Parse(s)
+	tmpl.Execute(&result, "")
+	return result.String()
 }
