@@ -231,7 +231,10 @@ func createRequest(url string, method string, user string, passwd string, header
 		req.SetBasicAuth(user, passwd)
 	}
 
-	req.Body = ioutil.NopCloser(strings.NewReader(evalTmpl(body)))
+	var strBody = evalTmpl(body)
+
+	req.Body = ioutil.NopCloser(strings.NewReader(strBody))
+	req.ContentLength = int64(len(strBody))
 	return req
 }
 
