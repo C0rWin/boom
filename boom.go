@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/C0rWin/boom/boomer"
 )
@@ -47,7 +48,7 @@ var (
 	c    = flag.Int("c", 50, "")
 	n    = flag.Int("n", 200, "")
 	q    = flag.Int("q", 0, "")
-	t    = flag.Int("t", 0, "")
+	t    = flag.Float64("t", 0.0, "")
 	cpus = flag.Int("cpus", runtime.GOMAXPROCS(-1), "")
 
 	insecure           = flag.Bool("allow-insecure", false, "")
@@ -155,6 +156,8 @@ func main() {
 		}
 	}
 
+	timeout := time.Duration((*t)*1000) * time.Millisecond
+
 	b := &boomer.Boomer{
 		RequestURL:         url,
 		Method:             method,
@@ -165,13 +168,13 @@ func main() {
 		N:                  num,
 		C:                  conc,
 		Qps:                q,
-		Timeout:            *t,
 		AllowInsecure:      *insecure,
 		DisableCompression: *disableCompression,
 		DisableKeepAlives:  *disableKeepAlives,
 		ProxyAddr:          proxyURL,
 		Output:             *output,
 		ReadAll:            *readAll,
+		Timeout:            timeout,
 	}
 
 	select {

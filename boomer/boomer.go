@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,9 +67,6 @@ type Boomer struct {
 	// C is the concurrency level, the number of concurrent workers to run.
 	C int
 
-	// Timeout in seconds.
-	Timeout int
-
 	// Qps is the rate limit.
 	Qps int
 
@@ -92,6 +90,9 @@ type Boomer struct {
 	// ReadAll determines whether the body of the response needs
 	// to be fully consumed.
 	ReadAll bool
+
+	// Connection time, how long to wait for response before closing connection
+	Timeout time.Duration
 
 	bar     *pb.ProgressBar
 	results chan *result
@@ -160,11 +161,15 @@ func (b *Boomer) runWorker(wg *sync.WaitGroup, ch chan *http.Request) {
 		},
 		DisableCompression: b.DisableCompression,
 		DisableKeepAlives:  b.DisableKeepAlives,
-		// TODO(jbd): Add dial timeout.
+
 		TLSHandshakeTimeout: time.Duration(b.Timeout) * time.Millisecond,
 		Proxy:               http.ProxyURL(b.ProxyAddr),
+		Dial: func(network string, address string) (net.Conn, error) {
+			return net.DialTimeout(network, address, b.Timeout)
+		},
 	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: tr,
+		Timeout: b.Timeout}
 	for req := range ch {
 		s := time.Now()
 
@@ -218,8 +223,8 @@ func (b *Boomer) runWorkers() {
 
 func createRequest(url string, method string, user string, passwd string, header http.Header, body string) *http.Request {
 	// and replace templates with random values
-	fUrl := evalTmpl(url)
-	req, _ := http.NewRequest(method, fUrl, nil)
+	fURL := evalTmpl(url)
+	req, _ := http.NewRequest(method, fURL, nil)
 
 	// deep copy of the Header
 	req.Header = make(http.Header, len(header))
